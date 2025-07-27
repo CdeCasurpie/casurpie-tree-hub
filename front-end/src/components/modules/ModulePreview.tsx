@@ -170,26 +170,7 @@ export const ModulePreview = ({ module, onPurchase, onVisit }: Props) => {
           {module.description || 'Este módulo te enseñará conceptos fundamentales de programación de manera práctica e interactiva.'}
         </p>
         
-        {/* Lista de beneficios */}
-        <div className="space-y-2">
-          <div className="text-sm text-text-secondary font-medium mb-2">
-            Lo que aprenderás:
-          </div>
-          <div className="space-y-1 text-sm">
-            <div className="flex items-center gap-2 text-text-primary">
-              <Check className="w-4 h-4 text-accent-green flex-shrink-0" />
-              <span>Conceptos fundamentales paso a paso</span>
-            </div>
-            <div className="flex items-center gap-2 text-text-primary">
-              <Check className="w-4 h-4 text-accent-green flex-shrink-0" />
-              <span>Ejercicios prácticos interactivos</span>
-            </div>
-            <div className="flex items-center gap-2 text-text-primary">
-              <Check className="w-4 h-4 text-accent-green flex-shrink-0" />
-              <span>Aplicación en proyectos reales</span>
-            </div>
-          </div>
-        </div>
+        
       </div>
 
       {/* Progreso visual si aplica */}

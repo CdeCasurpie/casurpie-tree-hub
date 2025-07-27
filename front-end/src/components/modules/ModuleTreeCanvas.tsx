@@ -34,10 +34,14 @@ export const ModuleTreeCanvas = ({ tree, selectedModule, onModuleClick }: Props)
   
   // Estados para navegación
   const [scale, setScale] = useState(1)
-  const [offset, setOffset] = useState({ x: 100, y: 50 }) // Offset inicial para centrar mejor
+  const [offset, setOffset] = useState({ x: 100, y: 50 }) // Se calculará automáticamente
   const [isDragging, setIsDragging] = useState(false)
   const [lastMousePos, setLastMousePos] = useState({ x: 0, y: 0 })
   const [hoveredModule, setHoveredModule] = useState<string | null>(null)
+  const [lastTouchDistance, setLastTouchDistance] = useState<number | null>(null)
+  const [lastTouchCenter, setLastTouchCenter] = useState<{ x: number, y: number } | null>(null)
+  const [isInitialized, setIsInitialized] = useState(false)
+  const [dragStartPos, setDragStartPos] = useState({ x: 0, y: 0 }) // Para detectar clicks vs drags
 
   // Constantes de diseño
   const GRID_SIZE = 25
@@ -371,10 +375,59 @@ export const ModuleTreeCanvas = ({ tree, selectedModule, onModuleClick }: Props)
     return null
   }, [tree, scale, offset])
 
+  // Función para centrar en el módulo root automáticamente
+  const centerOnRootModule = useCallback(() => {
+    if (!tree || !containerRef.current || tree.rootModules.length === 0) return
+    
+    // Encontrar el primer módulo root
+    const rootModuleId = tree.rootModules[0]
+    const rootModule = tree.modules.get(rootModuleId)
+    
+    if (!rootModule) return
+    
+    const container = containerRef.current
+    const containerRect = container.getBoundingClientRect()
+    
+    // Calcular posición para centrar el módulo root
+    const centerX = containerRect.width / 2
+    const centerY = containerRect.height / 5
+    
+    // Calcular offset necesario para centrar el módulo
+    const moduleX = rootModule.position.x * scale
+    const moduleY = rootModule.position.y * scale
+    const nodeCenterX = moduleX + (NODE_WIDTH * scale) / 2
+    const nodeCenterY = moduleY + (NODE_HEIGHT * scale) / 2
+    
+    const newOffset = {
+      x: centerX - nodeCenterX,
+      y: centerY - nodeCenterY
+    }
+    
+    setOffset(newOffset)
+    setIsInitialized(true)
+  }, [tree, scale])
+
+  // Función para manejar click/tap tanto en mouse como touch
+  const handleInteraction = useCallback((clientX: number, clientY: number) => {
+    const rect = canvasRef.current?.getBoundingClientRect()
+    if (!rect) return false
+    
+    const mouseX = clientX - rect.left
+    const mouseY = clientY - rect.top
+    
+    const moduleId = getModuleAtPosition(mouseX, mouseY)
+    if (moduleId) {
+      onModuleClick(moduleId)
+      return true // Se hizo click en un módulo
+    }
+    return false // No se hizo click en ningún módulo
+  }, [getModuleAtPosition, onModuleClick])
+
   // Handlers de eventos del mouse
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     setIsDragging(true)
     setLastMousePos({ x: e.clientX, y: e.clientY })
+    setDragStartPos({ x: e.clientX, y: e.clientY })
   }, [])
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
@@ -395,28 +448,26 @@ export const ModuleTreeCanvas = ({ tree, selectedModule, onModuleClick }: Props)
       
       setLastMousePos({ x: e.clientX, y: e.clientY })
     } else {
-      // Detectar hover
+      // Detectar hover solo si no estamos arrastrando
       const moduleId = getModuleAtPosition(mouseX, mouseY)
       setHoveredModule(moduleId)
     }
-  }, [isDragging, lastMousePos])
+  }, [isDragging, lastMousePos, getModuleAtPosition])
 
-  const handleMouseUp = useCallback(() => {
-    setIsDragging(false)
-  }, [])
-
-  const handleClick = useCallback((e: React.MouseEvent) => {
-    const rect = canvasRef.current?.getBoundingClientRect()
-    if (!rect) return
-    
-    const mouseX = e.clientX - rect.left
-    const mouseY = e.clientY - rect.top
-    
-    const moduleId = getModuleAtPosition(mouseX, mouseY)
-    if (moduleId) {
-      onModuleClick(moduleId)
+  const handleMouseUp = useCallback((e: React.MouseEvent) => {
+    // Detectar si fue un click (sin movimiento significativo)
+    if (isDragging) {
+      const deltaX = Math.abs(e.clientX - dragStartPos.x)
+      const deltaY = Math.abs(e.clientY - dragStartPos.y)
+      
+      // Si el movimiento fue mínimo, considerarlo un click
+      if (deltaX < 5 && deltaY < 5) {
+        handleInteraction(e.clientX, e.clientY)
+      }
     }
-  }, [onModuleClick])
+    
+    setIsDragging(false)
+  }, [isDragging, dragStartPos, handleInteraction])
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault()
@@ -462,7 +513,20 @@ export const ModuleTreeCanvas = ({ tree, selectedModule, onModuleClick }: Props)
   }, [draw])
 
   useEffect(() => {
-    const handleGlobalMouseUp = () => setIsDragging(false)
+    const handleGlobalMouseUp = (e: MouseEvent) => {
+      // Detectar si fue un click (sin movimiento significativo) también en eventos globales
+      if (isDragging) {
+        const deltaX = Math.abs(e.clientX - dragStartPos.x)
+        const deltaY = Math.abs(e.clientY - dragStartPos.y)
+        
+        // Si el movimiento fue mínimo, considerarlo un click
+        if (deltaX < 5 && deltaY < 5) {
+          handleInteraction(e.clientX, e.clientY)
+        }
+      }
+      setIsDragging(false)
+    }
+    
     const handleGlobalMouseMove = (e: MouseEvent) => {
       if (isDragging) {
         const deltaX = e.clientX - lastMousePos.x
@@ -486,7 +550,118 @@ export const ModuleTreeCanvas = ({ tree, selectedModule, onModuleClick }: Props)
       document.removeEventListener('mouseup', handleGlobalMouseUp)
       document.removeEventListener('mousemove', handleGlobalMouseMove)
     }
-  }, [isDragging, lastMousePos])
+  }, [isDragging, lastMousePos, dragStartPos, handleInteraction])
+
+  // Handlers para touch events móviles
+  const handleTouchStart = useCallback((e: TouchEvent) => {
+    e.preventDefault()
+    if (e.touches.length === 1) {
+      // Inicio de arrastre con un dedo
+      setIsDragging(true)
+      const touch = e.touches[0]
+      setLastMousePos({ x: touch.clientX, y: touch.clientY })
+    } else if (e.touches.length === 2) {
+      // Inicio de zoom con dos dedos
+      const touch1 = e.touches[0]
+      const touch2 = e.touches[1]
+      const dx = touch2.clientX - touch1.clientX
+      const dy = touch2.clientY - touch1.clientY
+      setLastTouchDistance(Math.sqrt(dx * dx + dy * dy))
+      
+      const centerX = (touch1.clientX + touch2.clientX) / 2
+      const centerY = (touch1.clientY + touch2.clientY) / 2
+      setLastTouchCenter({ x: centerX, y: centerY })
+    }
+  }, [])
+
+  const handleTouchMove = useCallback((e: TouchEvent) => {
+    e.preventDefault()
+    if (isDragging && e.touches.length === 1) {
+      // Arrastre con un dedo
+      const touch = e.touches[0]
+      const deltaX = touch.clientX - lastMousePos.x
+      const deltaY = touch.clientY - lastMousePos.y
+      
+      setOffset(prev => ({
+        x: prev.x + deltaX,
+        y: prev.y + deltaY
+      }))
+      
+      setLastMousePos({ x: touch.clientX, y: touch.clientY })
+    } else if (e.touches.length === 2) {
+      // Zoom con dos dedos
+      const touch1 = e.touches[0]
+      const touch2 = e.touches[1]
+      const dx = touch2.clientX - touch1.clientX
+      const dy = touch2.clientY - touch1.clientY
+      const distance = Math.sqrt(dx * dx + dy * dy)
+      
+      if (lastTouchDistance !== null) {
+        const zoomFactor = distance / lastTouchDistance
+        const newScale = scale * zoomFactor
+        
+        // Limitar zoom
+        if (newScale >= 0.3 && newScale <= 2) {
+          setScale(newScale)
+        }
+        setLastTouchDistance(distance)
+      }
+    }
+  }, [isDragging, lastMousePos, lastTouchDistance, scale])
+
+  const handleTouchEnd = useCallback((e: TouchEvent) => {
+    // Detectar si fue un tap (sin movimiento significativo)
+    if (e.changedTouches.length === 1 && isDragging) {
+      const touch = e.changedTouches[0]
+      const deltaX = Math.abs(touch.clientX - lastMousePos.x)
+      const deltaY = Math.abs(touch.clientY - lastMousePos.y)
+      
+      // Si el movimiento fue mínimo, considerarlo un tap
+      if (deltaX < 10 && deltaY < 10) {
+        handleInteraction(touch.clientX, touch.clientY)
+      }
+    }
+    
+    if (e.touches.length === 0) {
+      // Fin del arrastre o zoom
+      setIsDragging(false)
+      setLastTouchDistance(null)
+      setLastTouchCenter(null)
+    }
+  }, [isDragging, lastMousePos, handleInteraction])
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+
+    // Agregar event listeners para touch events móviles
+    canvas.addEventListener('touchstart', handleTouchStart, { passive: false })
+    canvas.addEventListener('touchmove', handleTouchMove, { passive: false })
+    canvas.addEventListener('touchend', handleTouchEnd, { passive: false })
+
+    return () => {
+      canvas.removeEventListener('touchstart', handleTouchStart)
+      canvas.removeEventListener('touchmove', handleTouchMove)
+      canvas.removeEventListener('touchend', handleTouchEnd)
+    }
+  }, [handleTouchStart, handleTouchMove, handleTouchEnd])
+
+  // Effect para centrar automáticamente en el módulo root cuando se carga
+  useEffect(() => {
+    if (tree && !isInitialized && containerRef.current) {
+      // Dar un pequeño delay para asegurar que el container esté completamente renderizado
+      setTimeout(() => {
+        centerOnRootModule()
+      }, 100)
+    }
+  }, [tree, isInitialized, centerOnRootModule])
+
+  // Effect para re-centrar si cambia el tamaño del container
+  useEffect(() => {
+    if (tree && isInitialized && containerRef.current) {
+      centerOnRootModule()
+    }
+  }, [tree, centerOnRootModule]) // Removí isInitialized para que siempre se re-centre
 
   if (!tree) {
     return (
@@ -504,7 +679,6 @@ export const ModuleTreeCanvas = ({ tree, selectedModule, onModuleClick }: Props)
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
-        onClick={handleClick}
         onWheel={handleWheel}
       />
       
@@ -525,7 +699,7 @@ export const ModuleTreeCanvas = ({ tree, selectedModule, onModuleClick }: Props)
         <button
           onClick={() => {
             setScale(1)
-            setOffset({ x: 100, y: 50 })
+            centerOnRootModule()
           }}
           className="block w-7 h-7 bg-bg-ternary hover:bg-border text-text-primary rounded text-xs"
         >

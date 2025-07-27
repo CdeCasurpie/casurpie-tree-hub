@@ -306,10 +306,7 @@ export default function ModulesPage() {
           <div className="grid grid-rows-[60%_40%] h-full">
             {/* Área del árbol compacta */}
             <div className="relative bg-bg-principal">
-              <div className="absolute top-4 left-4 text-xl font-bold text-text-primary z-10">
-                MÓDULOS
-              </div>
-              <div className="pt-12 h-full">
+              <div className="h-full">
                 <ModuleTreeCanvas
                   tree={processedTree}
                   selectedModule={selectedModule}
