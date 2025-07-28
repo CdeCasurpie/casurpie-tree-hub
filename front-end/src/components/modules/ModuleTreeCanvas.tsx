@@ -442,8 +442,8 @@ export const ModuleTreeCanvas = ({ tree, selectedModule, onModuleClick }: Props)
       const deltaY = e.clientY - lastMousePos.y
       
       setOffset(prev => ({
-        x: prev.x + deltaX,
-        y: prev.y + deltaY
+        x: prev.x + deltaX*0.0,
+        y: prev.y + deltaY*0.0
       }))
       
       setLastMousePos({ x: e.clientX, y: e.clientY })
