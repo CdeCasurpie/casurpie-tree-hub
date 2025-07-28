@@ -57,5 +57,30 @@ export const authService = {
   async getSession() {
     const { data: { session } } = await supabase.auth.getSession()
     return session
+  },
+
+  // Crear perfil manualmente
+  async createUserProfile(userId: string, displayName: string) {
+    const { data, error } = await supabase
+      .from('user_profiles')
+      .insert({
+        user_id: userId,
+        display_name: displayName
+      })
+      .select()
+      .single()
+    
+    return { data, error }
+  },
+
+  // Verificar si el usuario tiene perfil
+  async getUserProfile(userId: string) {
+    const { data, error } = await supabase
+      .from('user_profiles')
+      .select('*')
+      .eq('user_id', userId)
+      .single()
+    
+    return { data, error }
   }
 }
